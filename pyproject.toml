@@ -1,0 +1,17 @@
+[project]
+name = "userely"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "aiosqlite>=0.22.1",
+    "alembic>=1.20.0",
+    "fastapi[standard]>=0.141.1",
+    "jsonwebtoken>=1.0.0",
+    "pwdlib[argon2]>=0.3.1",
+    "pydantic>=2.13.5",
+    "pydantic-settings>=2.15.0",
+    "pyjwt>=2.14.0",
+    "sqlmodel>=0.0.42",
+]
