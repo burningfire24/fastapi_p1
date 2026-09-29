@@ -50,7 +50,7 @@ class UserService:
             await session.refresh(user)  # loads generated id, etc.
             return user  
         else:
-            return "not ok"
+            return False
 
 
     

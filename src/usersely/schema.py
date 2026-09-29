@@ -18,3 +18,7 @@ class LogiIn(BaseModel):
 class TokenChecker(BaseModel):
     access_token:str
     token_type:str
+
+
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str

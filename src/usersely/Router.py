@@ -1,109 +1,148 @@
-from fastapi import APIRouter, Depends, Body, Header
-from pydantic import EmailStr
+from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import JSONResponse
+from pydantic import EmailStr, BaseModel
 from typing import Union, Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import timedelta
+import jwt
+from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 
 
 from src.security.schema import Token
-from src.security.hashing import get_password_hash,verify_password
-from src.security.token_jwt import create_access_token, get_current_user
-from .schema import user_schema,LogiIn,TokenChecker
-from .services import create_user,get_users_booklist
+from src.security.hashing import get_password_hash, verify_password
+from src.security.token_jwt import create_access_token, get_current_user,refresh_token_request
+from .schema import user_schema, LogiIn,RefreshTokenRequest
 from src.db.database import db_connection
 from src.db.services import UserService
-
 
 user_router = APIRouter()
 user_service = UserService()
 
-@user_router.post('/sing-up',response_model=Union[Token, str])
-async def new_user(user_data:user_schema,db:AsyncSession=Depends(db_connection)):
-    
+
+
+@user_router.post('/sing-up')
+async def new_user(user_data: user_schema, db: AsyncSession = Depends(db_connection)):
     user_data.password = get_password_hash(user_data.password)
+    db_res = await user_service.create_user(user_data, db)
+    print(f"data as per below {db_res}")
+    if db_res:
+        # Create access token (30 minutes default)
+        access_token = create_access_token({
+            "name": user_data.name,
+            "email": user_data.email
+        })
+        
+        # Create refresh token (7 days default)
+        refresh_token = create_access_token(
+            {"name": user_data.name, "email": user_data.email},
+            is_refresh=True
+        )
+        
+        return JSONResponse({
+            "msg": "User created successfully",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "email": user_data.email
+        })
+    
+    return JSONResponse({"msg": "User already exists"}, status_code=400)
 
-    db_res= await user_service.create_user(user_data,db)
+@user_router.post('/login')
+async def existing_user(cred: LogiIn, session: AsyncSession = Depends(db_connection)):
+    get_db_data = await user_service.get_users_by_email(cred.email, session)
+    
+    if get_db_data and verify_password(cred.password, get_db_data.password):
+        # Create access token
+        access_token = create_access_token({
+            "name": get_db_data.name,
+            "email": get_db_data.email
+        })
+        
+        # Create refresh token
+        refresh_token = create_access_token(
+            {"name": get_db_data.name, "email": get_db_data.email},
+            is_refresh=True
+        )
+        
+        return JSONResponse({
+            "msg": "Login successful",
+            "access_token": access_token,
+            "refresh_token": refresh_token,
+            "token_type": "bearer",
+            "email": get_db_data.email
+        })
+    
+    return JSONResponse({"msg": "Invalid credentials"}, status_code=401)
 
-    print(db_res)
-
+@user_router.post('/refresh')
+async def refresh_token(refresh_request: RefreshTokenRequest):
+    """Refresh access token using refresh token"""
     try:
-        if db_res!="not ok":
-            #create jwt
-            token = await create_access_token({"name":user_data.name,"email":user_data.email})
-            return Token(access_token=token, token_type="bearer")
 
-        return "user already exists"    
-
-    except Exception as e:
-        print(f"===============error is {e}===================================")  
-
-
-
-@user_router.get('/login')
-async def existing_user(cred:Annotated[LogiIn,Header()],session:AsyncSession=Depends(db_connection)):
-
-    get_db_data = await user_service.get_users_by_email(cred.email,session)
-    
-    if get_db_data:
-        if verify_password(cred.password,get_db_data.password):
-            #provide jwt
-            token = await create_access_token({"name":get_db_data.name, "email":get_db_data.email})
-            return Token(access_token=token,token_type="bearer")
-
-        else:
-           return  {
-                "msg":"incorrect password"
-            }
-
-    else :        
-        return {
-            "msg":"invalid credentials"
-        }
-
-    
-
+        payload = await refresh_token_request(refresh_request)
+        # Create new access token
+        new_access_token = create_access_token({
+            "name": payload.get("name"),
+            "email": payload.get("email")
+        })
+        
+        return JSONResponse({
+            "msg": "Token refreshed successfully",
+            "access_token": new_access_token,
+            "token_type": "bearer"
+        })
+        
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(
+            status_code=401,
+            detail="Refresh token has expired"
+        )
+    except jwt.InvalidTokenError:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid refresh token"
+        )
 
 @user_router.get('/get_data')
 async def get_users_booklist(
-    token:Annotated[TokenChecker,Header()],
-    db:AsyncSession=Depends(db_connection)
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(db_connection)
 ):
-
+    # current_user contains the decoded token payload
+    email = current_user.get("email")
     
-    token_value = token.model_dump()
-    #validate token
-    is_token_valid= await get_current_user(token_value)
-    #get data from db
-    if is_token_valid:
-        email=is_token_valid['email']
-        data= await get_users_booklist(email)
-        return data
-    else:
-        return "invalid users"
+    # Get user data from database
+    user_data = await user_service.get_users_by_email(email, db)
+    
+    if user_data:
+        return {
+            "name": user_data.name,
+            "email": user_data.email,
+            "book_list": user_data.book_list
+        }
+    
+    return JSONResponse({"msg": "User not found"}, status_code=404)
   
 
 
 
 
 @user_router.patch('/update')
-async def update_user(db:AsyncSession=Depends(db_connection)):
-    
-    #validate token
-
-    #update data into db
-    
-    #response to user
-    pass
+async def update_user(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(db_connection)
+):
+    # Update user logic here
+    return {"msg": "Update endpoint - implement user update logic"}
 
 @user_router.delete('/remove')
-async def remove_user(db:AsyncSession=Depends(db_connection)):
-
-    #validate token
-
-    #get data from db
-    
-    #response to user
-
-    pass
+async def remove_user(
+    current_user: dict = Depends(get_current_user),
+    db: AsyncSession = Depends(db_connection)
+):
+    # Delete user logic here
+    return {"msg": "Delete endpoint - implement user deletion logic"}
 
 
 
