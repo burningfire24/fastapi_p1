@@ -1,14 +1,16 @@
 import jwt
 from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 from fastapi import HTTPException, status, Depends
-from fastapi.security import OAuth2PasswordBearer,OAuth2PasswordRequestForm
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+
 from typing import Annotated
 from datetime import datetime, timedelta, timezone
 
 from .config import config
 from src.usersely.schema import RefreshTokenRequest
-# OAuth2 scheme for token extraction
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login")
+
+#Token extraction
+bearer_scheme = HTTPBearer(auto_error=False) 
 
 def create_access_token(data: dict, expires_delta: timedelta | None = None, is_refresh: bool = False) -> str:
     """Create JWT token (access or refresh)"""
@@ -27,17 +29,17 @@ def create_access_token(data: dict, expires_delta: timedelta | None = None, is_r
     encoded_jwt = jwt.encode(to_encode, config.secret_key.get_secret_value(), algorithm=config.algorithm)
     return encoded_jwt
 
-async def get_current_user(token: Annotated[str, Depends(oauth2_scheme)]) -> dict:
+async def get_current_user(token: Annotated[HTTPAuthorizationCredentials | None, Depends(bearer_scheme)]) -> dict:
     """Dependency to get current user from token"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
+        detail="Could not validate token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
     try:
         payload = jwt.decode(
-            token, 
+            token.credentials, 
             config.secret_key.get_secret_value(), 
             algorithms=[config.algorithm]
         )

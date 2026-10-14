@@ -48,3 +48,4 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app.include_router(user_router, prefix=f"/api/{version}/users",tags=['Users'])
 app.include_router(router_book, prefix=f"/api/{version}/book",tags=['Books'])
+

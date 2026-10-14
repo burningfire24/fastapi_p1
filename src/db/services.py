@@ -65,14 +65,14 @@ class UserService:
         query = (
             update(User)
             .where(User.email == email)
-            .values(book_list=func.json_insert(User.book_list, book))
+            .values(book_list=func.json_insert(User.book_list,"$[#]", book))
         )
         await session.execute(query)
         await session.commit()    
         
-        book_lists = await get_users_booklist(email,session)
+        book_lists = await self.get_users_booklist(email,session)
 
-        return book_list
+        return book_lists
 
 
 

@@ -1,11 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import EmailStr, BaseModel
-from typing import Union, Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
-from datetime import timedelta
+
 import jwt
-from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
+
 
 
 from src.security.schema import Token
@@ -122,19 +120,31 @@ async def get_users_booklist(
             "book_list": user_data.book_list
         }
     
-    return JSONResponse({"msg": "User not found"}, status_code=404)
+    return JSONResponse({"msg": "User data not found"}, status_code=404)
   
 
 
 
 
 @user_router.patch('/update')
-async def update_user(
+async def update_user( 
+    add_book_to_list:str,
     current_user: dict = Depends(get_current_user),
     db: AsyncSession = Depends(db_connection)
 ):
     # Update user logic here
-    return {"msg": "Update endpoint - implement user update logic"}
+    email = current_user.get('email')
+    try:
+        user_update= await user_service.update_book_list(email,add_book_to_list,db)
+        if user_update:
+            return user_update
+
+        return {"msg": "something went wrong"}
+    except Exception as e:
+        print(f"failed with error {e}")
+        raise e    
+
+
 
 @user_router.delete('/remove')
 async def remove_user(
